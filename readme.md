@@ -1,5 +1,6 @@
 
-### Required Environment Variables
+### Required Environment Variables.
+#### You can use the supplied .env or create them as your operationg system specifies.
 `TOKEN` - Discord Bot Token
 
 ### To Run the Bot

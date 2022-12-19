@@ -68,9 +68,9 @@ class ComponentView(ui.View):
         self.text = ""
 
         # create and hold a reference, but don't add them to the view. Once added to a view they "appear".
-        self.button1 = MyButton("Button1")
-        self.button2 = MyButton("Button2")
-        self.button3 = MyButton("Button3")
+        self.button1 = MyButton("Button1", style=discord.ButtonStyle.red)
+        self.button2 = MyButton("Button2", style=discord.ButtonStyle.green)
+        self.button3 = MyButton("Button3", style=discord.ButtonStyle.blurple)
 
     @ui.select(options=SELECT_OPTIONS)
     async def dropdown_selected(self, interaction: discord.Interaction, select: ui.Select):
