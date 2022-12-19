@@ -1,7 +1,118 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import sys
+from logging import StreamHandler, FileHandler
+from typing import Optional, Literal
+
 import discord
-from discord import app_commands
-from discord import ui
+import dotenv
+from discord import app_commands, Interaction, ui
 from discord.ext import commands
+from discord.ext.commands import Context, Greedy
+
+BASE_DIR = os.path.normpath(os.path.dirname(os.path.realpath(__file__)))
+handler_console = StreamHandler(stream=sys.stdout)
+handler_console.setLevel(logging.DEBUG)
+handler_filestream = FileHandler(filename=f"{BASE_DIR}/bot.log", encoding='utf-8')
+handler_filestream.setLevel(logging.INFO)
+
+logging_handlers = [
+        handler_console,
+        handler_filestream
+]
+
+logging.basicConfig(
+    format="%(asctime)s | %(name)25s | %(funcName)25s | %(levelname)6s | %(message)s",
+    datefmt="%b %d %H:%M:%S",
+    level=logging.DEBUG,
+    handlers=logging_handlers
+)
+logging.getLogger('asyncio').setLevel(logging.ERROR)
+logging.getLogger('discord').setLevel(logging.ERROR)
+logging.getLogger('websockets').setLevel(logging.ERROR)
+log = logging.getLogger(__name__)
+
+
+dotenv.load_dotenv()
+log = logging.getLogger(__name__)
+
+extensions = (
+    'bot.core',
+    'bot.example',
+)
+
+
+class MissingConfigurationException(Exception):
+    pass
+
+
+def assert_envs_exist():
+    envs = (
+        ('TOKEN', 'The Bot Token', str),
+    )
+    for e in envs:
+        ident = f"{e[0]}/{e[1]}"
+        value = os.environ.get(e[0])
+        if value is None:
+            raise MissingConfigurationException(f"{ident} needs to be- defined")
+        try:
+            _ = e[2](value)
+        except ValueError:
+            raise MissingConfigurationException(f"{ident} is not the required type of {e[2]}")
+
+
+class CoreCog(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @app_commands.command(name='help', description="See the commands that this bot has to offer")
+    async def help_cmd(self, itx: Interaction):
+        title = "Bot Help Commands"
+
+        description = textwrap.dedent(
+            """For further help, use /cmd and see the hints that discord provides
+
+            **Available Commands**
+
+        """)
+        embed = discord.Embed(title=title, description=description)
+
+        await itx.response.send_message(embed=embed, ephemeral=True)
+
+    @commands.is_owner()
+    @commands.guild_only()
+    @commands.command()
+    async def sync(self,
+                   ctx: Context, guilds: Greedy[discord.Object], spec: Optional[Literal["~", "*", "^"]] = None) -> None:
+        if not guilds:
+            if spec == "~":
+                synced = await ctx.bot.tree.sync(guild=ctx.guild)
+            elif spec == "*":
+                ctx.bot.tree.copy_global_to(guild=ctx.guild)
+                synced = await ctx.bot.tree.sync(guild=ctx.guild)
+            elif spec == "^":
+                ctx.bot.tree.clear_commands(guild=ctx.guild)
+                await ctx.bot.tree.sync(guild=ctx.guild)
+                synced = []
+            else:
+                synced = await ctx.bot.tree.sync()
+
+            await ctx.send(
+                f"Synced {len(synced)} commands {'globally' if spec is None else 'to the current guild.'}"
+            )
+            return
+        ret = 0
+        for guild in guilds:
+            try:
+                await ctx.bot.tree.sync(guild=guild)
+            except discord.HTTPException:
+                pass
+            else:
+                ret += 1
+        await ctx.send(f"Synced the tree to {ret}/{len(guilds)}.")
 
 # Create Select options. This is a List of SelectOption. I just use a list comprehension here to make it easier
 SELECT_OPTIONS = [discord.SelectOption(label=f"Value{x}", value=f"Value{x}") for x in range(1, 4)]
@@ -33,7 +144,6 @@ class MyModal(ui.Modal, title="Enter a value"):
         # Append to the text line.
         self.view.text += f"\n Modal was called and value entered is {value}"
         await interaction.response.edit_message(embed=make_embed(self.view.text), view=self.view)
-
 
 
 class MyButton(ui.Button):
@@ -105,6 +215,22 @@ class ExampleCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=ComponentView())
 
 
-async def setup(bot):
-    await bot.add_cog(ExampleCog(bot))
+async def run_bot():
+    assert_envs_exist()
+    token = os.environ['TOKEN']
+    intents = discord.Intents.none()
+    intents.messages = True
+    intents.guilds = True
+    bot = commands.Bot(
+        intents=intents,
+        command_prefix=commands.when_mentioned,
+        slash_commands=True,
+    )
+    async with bot:
+        await bot.add_cog(CoreCog(bot))
+        await bot.add_cog(ExampleCog(bot))
+        await bot.start(token)
 
+
+if __name__ == "__main__":
+    asyncio.run(run_bot())
